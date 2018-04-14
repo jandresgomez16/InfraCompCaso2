@@ -12,6 +12,8 @@ import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.bc.BcRSAContentSignerBuilder;
 
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.math.BigInteger;
 import java.net.InetAddress;
@@ -55,14 +57,20 @@ public class Cliente {
     BufferedReader stdIn = null;
 
     public void iniciar() throws IOException, CertificateException {
+        stdIn = new BufferedReader(new InputStreamReader(System.in));
+
+        System.out.println("En que puerto esta el servidor?");
+        int port = 9160;
         try {
-            socket = new Socket(InetAddress.getLocalHost(), 9160);
+            port = Integer.parseInt(stdIn.readLine());
+        } catch (Exception e) { }
+
+        try {
+            socket = new Socket(InetAddress.getLocalHost(), port);
         } catch (Exception e) { e.printStackTrace(); System.exit(-1); }
 
         writer = new PrintWriter(socket.getOutputStream(), true);
         reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-        stdIn = new BufferedReader(new InputStreamReader(System.in));
 
         //Iniciar protocolo con el servidor
         System.out.println("Desea iniciar la conexion? (Y/N)");
@@ -82,8 +90,8 @@ public class Cliente {
         }
 
         //Enviar algoritmos a usar
-        String[] alg = preguntaAlgoritmos();
-        String msg = ALG + ":" + alg[0] + ":RSA:" + alg[1];
+        String[] ALGORITMOS = preguntaAlgoritmos();
+        String msg = ALG + ":" + ALGORITMOS[0] + ":RSA:" + ALGORITMOS[1];
         writer.println(msg);
         System.out.println(SOUT + msg);
 
@@ -156,7 +164,8 @@ public class Cliente {
 
         //Descifrar mensaje
         s = s.split(":")[1];
-        System.out.println(Taller7.descifrar(s.getBytes(), keyPair.getPrivate()));
+        byte[] llaveBytes = RSACipher.descifrar(s.getBytes(), keyPair.getPrivate());
+        SecretKey secretKey = new SecretKeySpec(llaveBytes, 0, llaveBytes.length, "RSA");
 
 
     }
