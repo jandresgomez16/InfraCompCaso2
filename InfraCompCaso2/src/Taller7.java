@@ -3,16 +3,14 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 
 public class Taller7 {
     private final static String ALGORITMO = "RSA";
-    private KeyPair keyPair;
 
-    public byte[] cifrar() {
+    public static byte[] cifrar(PublicKey publicKey) {
         try {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance(ALGORITMO);
-            generator.initialize(1024);
-            keyPair = generator.generateKeyPair();
             Cipher cipher = Cipher.getInstance(ALGORITMO);
             BufferedReader stdIn =
                     new BufferedReader(new InputStreamReader(System.in));
@@ -20,7 +18,7 @@ public class Taller7 {
             byte [] clearText = pwd.getBytes();
             String s1 = new String (clearText);
             System.out.println("clave original: " + s1);
-            cipher.init(Cipher.ENCRYPT_MODE, keyPair.getPublic());
+            cipher.init(Cipher.ENCRYPT_MODE, publicKey);
             long startTime = System.nanoTime();
             byte [] cipheredText = cipher.doFinal(clearText);
             long endTime = System.nanoTime();
@@ -35,21 +33,28 @@ public class Taller7 {
         }
     }
 
-    public void descifrar(byte[] cipheredText) {
+    public static String descifrar(byte[] cipheredText, PrivateKey privateKey) {
+        String s3 = "";
         try {
             Cipher cipher = Cipher.getInstance(ALGORITMO);
-            cipher.init(Cipher.DECRYPT_MODE, keyPair.getPrivate());
+            cipher.init(Cipher.DECRYPT_MODE, privateKey);
             byte [] clearText = cipher.doFinal(cipheredText);
-            String s3 = new String(clearText);
-            System.out.println("clave original: " + s3);
+            s3 = new String(clearText);
+            return s3;
+            /*System.out.println("clave original: " + s3);*/
         }
         catch (Exception e) {
-            System.out.println("Excepcion: " + e.getMessage());
+            /*System.out.println("Excepcion: " + e.getMessage());*/
         }
+        return s3;
     }
 
     public static void main(String[] args) {
-        Taller7 taller7 = new Taller7();
-        taller7.descifrar(taller7.cifrar());
+        try {
+            KeyPairGenerator generator = KeyPairGenerator.getInstance(ALGORITMO);
+            generator.initialize(1024);
+            KeyPair keyPair = generator.generateKeyPair();
+            descifrar(cifrar(keyPair.getPublic()), keyPair.getPrivate());
+        } catch (Exception e) { e.printStackTrace(); }
     }
 }

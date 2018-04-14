@@ -16,10 +16,7 @@ import java.io.*;
 import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.Socket;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.PublicKey;
-import java.security.Security;
+import java.security.*;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -30,13 +27,15 @@ import java.util.Random;
 public class Cliente {
     //Cadenas de control
     private static final String CTO = "Connection timed out";
-    private static final String SOUT = "Server >> ";
+    private static final String SIN = "Server << ";
+    private static final String SOUT = "Client >> ";
     private static final String INIC = "HOLA";
     private static final String ALG = "ALGORITMOS";
     private static final String CC = "CERTCLNT";
     private static final String CS = "CERTSRV";
     private static final String OK = "ESTADO:OK";
-    private static final String
+    private static final String ERR = "ESTADO:ERROR";
+    private static final String CRTERR = "El certificado enviado no es valido";
 
     //Cadenas de referencia
     private static final String MD5 = "HMACMD5";
@@ -50,7 +49,7 @@ public class Cliente {
     Socket socket = null;
     PrintWriter writer = null;
     BufferedReader reader = null;
-    KeyPair kp = null;
+    KeyPair keyPair = null;
 
     //User data
     BufferedReader stdIn = null;
@@ -67,22 +66,34 @@ public class Cliente {
 
         //Iniciar protocolo con el servidor
         System.out.println("Desea iniciar la conexion? (Y/N)");
-        if(stdIn.readLine().equals("1") || stdIn.readLine().equals("Y")) writer.println(INIC);
+        String s = stdIn.readLine();
+        if(s.equals("1") || s.equals("Y")) {
+            writer.println(INIC);
+            System.out.println(SOUT + INIC);
+        }
         else System.exit(0);
 
         //Recibir respuesta servidor
-        String s = reader.readLine();
-        if(s != null) System.out.println(SOUT + s);
-        else System.out.println(CTO);
+        s = reader.readLine();
+        if(s != null) System.out.println(SIN + s);
+        else {
+            System.out.println(CTO);
+            System.exit(-1);
+        }
 
         //Enviar algoritmos a usar
         String[] alg = preguntaAlgoritmos();
-        writer.println(ALG + ":" + alg[0] + ":RSA:" + alg[1]);
+        String msg = ALG + ":" + alg[0] + ":RSA:" + alg[1];
+        writer.println(msg);
+        System.out.println(SOUT + msg);
 
         //Recibir compatibilidad de algoritmos
         s = reader.readLine();
-        if(s != null) System.out.println(SOUT + s);
-        else System.out.println(CTO);
+        if(s != null) System.out.println(SIN + s);
+        else {
+            System.out.println(CTO);
+            System.exit(-1);
+        }
 
         //Generar certificado
         java.security.cert.X509Certificate cert = null;
@@ -93,31 +104,68 @@ public class Cliente {
 
         //Enviar certificado
         writer.println(CC);
+        System.out.println(SOUT + CC);
         try {
             socket.getOutputStream().write(cert.getEncoded());
             socket.getOutputStream().flush();
+            System.out.println(SOUT + "Client certificate bytes");
         } catch (Exception e) { e.printStackTrace(); }
 
-        //Leer inicio certificado
+        //Leer resultado certificado
         s = reader.readLine();
-        if(s != null) System.out.println(SOUT + s);
-        else System.out.println(CTO);
+        if(s != null) {
+            System.out.println(SIN + s);
+        }
+        else {
+            System.out.println(CTO);
+            System.exit(-1);
+        }
 
         //Leer bytes del certificado
         byte[] temp = new byte[1024];
         int k = socket.getInputStream().read(temp);
         byte[] bytes = Arrays.copyOf(temp, k);
+        System.out.println(SIN + "Server certificate bytes");
 
         //Extraer PublicKey del certificado
         InputStream is = new ByteArrayInputStream(bytes);
-        X509Certificate serverCert = (X509Certificate) (CertificateFactory.getInstance("X.509")).generateCertificate(is);
+        X509Certificate serverCert = null;
+        try {
+            serverCert = (X509Certificate) (CertificateFactory.getInstance("X.509")).generateCertificate(is);
+        } catch (Exception e) { writer.println(ERR); System.out.println(SOUT + ERR); System.exit(-1);}
         PublicKey publicKey = serverCert.getPublicKey();
+
+        //Validar fecha certificado
+        Date a = serverCert.getNotAfter();
+        Date b = serverCert.getNotBefore();
+        Date d = new Date();
+        if(a.compareTo(d) * d.compareTo(b) > 0) {
+            writer.println(OK);
+            System.out.println(SOUT + OK);
+        }
+        else {
+            writer.println(ERR);
+            System.out.println(CRTERR);
+            System.exit(-1);
+        }
+
+        //Leer mensaje encriptado
+        reader.readLine();
+        s = reader.readLine();
+        System.out.println(SIN + s);
+
+        //Descifrar mensaje
+        s = s.split(":")[1];
+        System.out.println(Taller7.descifrar(s.getBytes(), keyPair.getPrivate()));
+
+
     }
 
     public java.security.cert.X509Certificate generarCertificado(String algorithm) throws Exception
     {
         KeyPairGenerator keygen = KeyPairGenerator.getInstance("RSA");
-        kp = keygen.generateKeyPair();
+        keygen.initialize(1024);
+        keyPair = keygen.generateKeyPair();
         Date notBefore = new Date();
         Date notAfter = new Date(2018, 12, 31);
         BigInteger randomSerial = new BigInteger(32,new Random());
@@ -125,9 +173,9 @@ public class Cliente {
 
         X509v3CertificateBuilder builder = new X509v3CertificateBuilder(new X500Name("CN=Cert"),
                 randomSerial, notBefore, notAfter, new X500Name("CN=JAGV"),
-                new SubjectPublicKeyInfo(ASN1Sequence.getInstance(kp.getPublic().getEncoded())));
+                new SubjectPublicKeyInfo(ASN1Sequence.getInstance(keyPair.getPublic().getEncoded())));
 
-        AsymmetricKeyParameter privateKeyAsymKeyParam = PrivateKeyFactory.createKey(kp.getPrivate().getEncoded());
+        AsymmetricKeyParameter privateKeyAsymKeyParam = PrivateKeyFactory.createKey(keyPair.getPrivate().getEncoded());
         AlgorithmIdentifier sigAlgId = new DefaultSignatureAlgorithmIdentifierFinder().find(algorithm);
         AlgorithmIdentifier digAlgId = new DefaultDigestAlgorithmIdentifierFinder().find(sigAlgId);
 
