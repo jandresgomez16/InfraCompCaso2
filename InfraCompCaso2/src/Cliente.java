@@ -156,18 +156,17 @@ public class Cliente {
             System.exit(-1);
         }
 
-        //Leer bytes del certificado
+        /*//Leer bytes del certificado
         byte[] temp = new byte[1024];
         int k = 0;
         k = socket.getInputStream().read(temp);
         System.out.println(k);
         byte[] bytes = Arrays.copyOf(temp, k);
-        System.out.println(SIN + "Server certificate bytes");
+        System.out.println(SIN + "Server certificate bytes");*/
 
-        //Extraer PublicKey del certificado
-        InputStream is = new ByteArrayInputStream(bytes);
+        //Obtener certificado del servidor y extraer la PublicKey
         try {
-            serverCert = (X509Certificate) (CertificateFactory.getInstance("X.509")).generateCertificate(is);
+            serverCert = (X509Certificate) (CertificateFactory.getInstance("X.509")).generateCertificate(socket.getInputStream());
         } catch (Exception e) {
             writer.println(ERR);
             System.out.println(SOUT + ERR);
