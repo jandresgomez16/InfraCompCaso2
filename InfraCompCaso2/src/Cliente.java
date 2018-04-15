@@ -1,3 +1,4 @@
+import javafx.scene.control.ToggleGroup;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -12,8 +13,10 @@ import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
 import org.bouncycastle.operator.bc.BcRSAContentSignerBuilder;
 
+import javax.crypto.Mac;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import javax.xml.bind.DatatypeConverter;
 import java.io.*;
 import java.math.BigInteger;
 import java.net.InetAddress;
@@ -38,6 +41,8 @@ public class Cliente {
     private static final String OK = "ESTADO:OK";
     private static final String ERR = "ESTADO:ERROR";
     private static final String CRTERR = "El certificado enviado no es valido";
+    private static final String ACT1 = "ACT1:";
+    private static final String ACT2 = "ACT2:";
 
     //Cadenas de referencia
     private static final String MD5 = "HMACMD5";
@@ -46,6 +51,7 @@ public class Cliente {
     private static final String AES = "AES";
     private static final String RSA = "RSA";
     private static final String BF = "BLOWFISH";
+    private static final String PADDING = "/ECB/PKCS5Padding";
 
     //Client data
     Socket socket = null;
@@ -56,13 +62,14 @@ public class Cliente {
     //User data
     BufferedReader stdIn = null;
 
-    public void iniciar() throws IOException, CertificateException {
+    public void iniciar() throws IOException, CertificateException, InvalidKeyException, NoSuchAlgorithmException{
         stdIn = new BufferedReader(new InputStreamReader(System.in));
 
         System.out.println("En que puerto esta el servidor?");
         int port = 9160;
         try {
             port = Integer.parseInt(stdIn.readLine());
+            if(port == 1) port = 9160;
         } catch (Exception e) { }
 
         try {
@@ -140,7 +147,8 @@ public class Cliente {
         X509Certificate serverCert = null;
         try {
             serverCert = (X509Certificate) (CertificateFactory.getInstance("X.509")).generateCertificate(is);
-        } catch (Exception e) { writer.println(ERR); System.out.println(SOUT + ERR); System.exit(-1);}
+        } catch (Exception e) { e.printStackTrace();
+            writer.println(ERR); System.out.println(SOUT + ERR); System.exit(-1);}
         PublicKey publicKey = serverCert.getPublicKey();
 
         //Validar fecha certificado
@@ -162,12 +170,54 @@ public class Cliente {
         s = reader.readLine();
         System.out.println(SIN + s);
 
-        //Descifrar mensaje
+        //Descifrar llave del mensaje
         s = s.split(":")[1];
-        byte[] llaveBytes = RSACipher.descifrar(s.getBytes(), keyPair.getPrivate());
-        SecretKey secretKey = new SecretKeySpec(llaveBytes, 0, llaveBytes.length, "RSA");
+        System.out.println(s);
+        byte[] llaveBytes = RSACipher.descifrar(DatatypeConverter.parseHexBinary(s), keyPair.getPrivate());
+        SecretKey secretKey = new SecretKeySpec(llaveBytes, 0, llaveBytes.length, RSA);
 
+        //Pedir coordenadas
+        s = stdIn.readLine();
+        if(s.equals("1")) s = "41 24.2028, 2 10.4418";
 
+        //Cifrar coordenadas
+        byte[] act1Bytes = AESCipher.cifrar(s, secretKey, ALGORITMOS[0].equals("AES")? ALGORITMOS[0] + PADDING : ALGORITMOS[0]);
+        String act1 = toHexString(act1Bytes).toUpperCase();
+
+        //Enviar act1 cifrado
+        System.out.println(SOUT + ACT1 + act1);
+        writer.println(ACT1+act1);
+
+        //Obtener MAC
+        byte[] act2Bytes = getMAC(act1Bytes, secretKey, ALGORITMOS[1]);
+        String act2 = toHexString(act2Bytes).toUpperCase();
+        System.out.println(SOUT + ACT2 + act2);
+        writer.println(ACT2 + act2);
+
+        //Leer respuesta servidor
+        s = reader.readLine();
+        if(s != null) {
+            System.out.println(SIN + s);
+        }
+        else {
+            System.out.println(CTO);
+            System.exit(-1);
+        }
+    }
+
+    private String toHexString(byte[] data)
+    {
+        String rta = "";
+        for (byte b: data)
+            rta+= String.format("%2s",Integer.toHexString((char)b & 0xFF)).replace(' ', '0');
+        return rta;
+    }
+
+    public static byte[] getMAC(byte[] text, Key key, String alg) throws NoSuchAlgorithmException, InvalidKeyException
+    {
+        Mac macGen = Mac.getInstance(alg);
+        macGen.init(key);
+        return macGen.doFinal(text);
     }
 
     public java.security.cert.X509Certificate generarCertificado(String algorithm) throws Exception

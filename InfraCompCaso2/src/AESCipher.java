@@ -2,12 +2,11 @@ import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 
 public class AESCipher {
-    private final static String PADDING="AES/ECB/PKCS5Padding";
 
-    public byte[] cifrar(String text, SecretKey secretKey) {
+    public static byte[] cifrar(String text, SecretKey secretKey, String ALGORITMO) {
         byte [] cipheredText = new byte[0];
         try {
-            Cipher cipher = Cipher.getInstance(PADDING);
+            Cipher cipher = Cipher.getInstance(ALGORITMO);
             byte [] clearText = text.getBytes();
             String s1 = new String (clearText);
             cipher.init(Cipher.ENCRYPT_MODE, secretKey);
@@ -18,10 +17,10 @@ public class AESCipher {
         return cipheredText;
     }
 
-    public String descifrar(byte [] cipheredText, SecretKey secretKey) {
+    public static String descifrar(byte [] cipheredText, SecretKey secretKey, String ALGORITMO) {
         String s = "";
         try {
-            Cipher cipher = Cipher.getInstance(PADDING);
+            Cipher cipher = Cipher.getInstance(ALGORITMO);
             cipher.init(Cipher.DECRYPT_MODE, secretKey);
             byte [] clearText = cipher.doFinal(cipheredText);
             s = new String(clearText);

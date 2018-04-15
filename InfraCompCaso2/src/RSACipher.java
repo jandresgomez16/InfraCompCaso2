@@ -36,4 +36,8 @@ public class RSACipher {
         catch (Exception e) { e.printStackTrace(); }
         return bytes;
     }
+
+    public static void main(String[] args) {
+
+    }
 }
