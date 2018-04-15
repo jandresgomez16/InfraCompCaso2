@@ -174,7 +174,7 @@ public class Cliente {
         s = s.split(":")[1];
         System.out.println(s);
         byte[] llaveBytes = RSACipher.descifrar(DatatypeConverter.parseHexBinary(s), keyPair.getPrivate());
-        SecretKey secretKey = new SecretKeySpec(llaveBytes, 0, llaveBytes.length, RSA);
+        SecretKey secretKey = new SecretKeySpec(llaveBytes, 0, llaveBytes.length, ALGORITMOS[0]);
 
         //Pedir coordenadas
         s = stdIn.readLine();
