@@ -9,15 +9,13 @@ import java.security.PublicKey;
 public class RSACipher {
     private final static String ALGORITMO = "RSA";
 
-    public static byte[] cifrar(PublicKey publicKey) {
+    public static byte[] cifrar(PublicKey publicKey, byte[] text) {
         try {
             Cipher cipher = Cipher.getInstance(ALGORITMO);
             BufferedReader stdIn =
                     new BufferedReader(new InputStreamReader(System.in));
-            String pwd = stdIn.readLine();
-            byte [] clearText = pwd.getBytes();
+            byte [] clearText = text;
             String s1 = new String (clearText);
-            System.out.println("clave original: " + s1);
             cipher.init(Cipher.ENCRYPT_MODE, publicKey);
             byte [] cipheredText = cipher.doFinal(clearText);
             return cipheredText;

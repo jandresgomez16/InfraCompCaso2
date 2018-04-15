@@ -1,4 +1,3 @@
-import javafx.scene.control.ToggleGroup;
 import org.bouncycastle.asn1.ASN1Sequence;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
@@ -53,68 +52,89 @@ public class Cliente {
     private static final String BF = "BLOWFISH";
     private static final String PADDING = "/ECB/PKCS5Padding";
 
+    //Server data
+    X509Certificate serverCert = null;
+    PublicKey publicKey = null;
+    SecretKey secretKey = null;
+
     //Client data
     Socket socket = null;
     PrintWriter writer = null;
     BufferedReader reader = null;
     KeyPair keyPair = null;
+    X509Certificate cert = null;
+    String[] ALGORITMOS = null;
 
-    //User data
-    BufferedReader stdIn = null;
+    //Input data
+    BufferedReader stdIn = new BufferedReader(new InputStreamReader(System.in));
+    String pos = null;
 
-    public void iniciar() throws IOException, CertificateException, InvalidKeyException, NoSuchAlgorithmException{
-        stdIn = new BufferedReader(new InputStreamReader(System.in));
+    public void enviarCoordenadas() throws IOException, CertificateException, InvalidKeyException, NoSuchAlgorithmException{
+        definirCoordenadas();
+        definirPuerto();
+        iniciarProtocolo();
+        definirProtocolo();
+        intercambiarCertificados();
+        obtenerLlaveSimetrica();
+        generarACT1ACT2();
+        esperarRespuesta();
+    }
 
-        System.out.println("En que puerto esta el servidor?");
-        int port = 9160;
-        try {
-            port = Integer.parseInt(stdIn.readLine());
-            if(port == 1) port = 9160;
-        } catch (Exception e) { }
-
-        try {
-            socket = new Socket(InetAddress.getLocalHost(), port);
-        } catch (Exception e) { e.printStackTrace(); System.exit(-1); }
-
-        writer = new PrintWriter(socket.getOutputStream(), true);
-        reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-        //Iniciar protocolo con el servidor
-        System.out.println("Desea iniciar la conexion? (Y/N)");
-        String s = stdIn.readLine();
-        if(s.equals("1") || s.equals("Y")) {
-            writer.println(INIC);
-            System.out.println(SOUT + INIC);
+    public void esperarRespuesta() throws IOException {
+        //Leer respuesta servidor
+        String s = reader.readLine();
+        if(s != null) {
+            System.out.println(SIN + s);
         }
-        else System.exit(0);
-
-        //Recibir respuesta servidor
-        s = reader.readLine();
-        if(s != null) System.out.println(SIN + s);
         else {
             System.out.println(CTO);
             System.exit(-1);
         }
+    }
 
-        //Enviar algoritmos a usar
-        String[] ALGORITMOS = preguntaAlgoritmos();
-        String msg = ALG + ":" + ALGORITMOS[0] + ":RSA:" + ALGORITMOS[1];
-        writer.println(msg);
-        System.out.println(SOUT + msg);
+    public void generarACT1ACT2() throws IOException, NoSuchAlgorithmException, InvalidKeyException {
+        //Cifrar coordenadas
+        byte[] act1Bytes = AESCipher.cifrar(pos, secretKey, ALGORITMOS[0] + PADDING);
+        String act1 = toHexString(act1Bytes).toUpperCase();
 
-        //Recibir compatibilidad de algoritmos
-        s = reader.readLine();
-        if(s != null) System.out.println(SIN + s);
-        else {
-            System.out.println(CTO);
-            System.exit(-1);
-        }
+        //Enviar act1 cifrado
+        System.out.println(SOUT + ACT1 + act1);
+        writer.println(ACT1+act1);
 
+        //Obtener MAC de act1
+        byte[] macText = getMAC(pos.getBytes(), secretKey, ALGORITMOS[1]);
+        byte[] act2Bytes = RSACipher.cifrar(publicKey, macText);
+        String act2 = toHexString(act2Bytes).toUpperCase();
+        System.out.println(SOUT + ACT2 + act2);
+        writer.println(ACT2 + act2);
+    }
+
+    public void definirCoordenadas() throws IOException {
+        //Pedir coordenadas
+        System.out.println("Cuales son las coordenadas a enviar?"  + "\n" +
+                "(Por defecto (1) se envia: \"41 24.2028, 2 10.4418)\")");
+        pos = stdIn.readLine();
+        if(pos.equals("1")) pos = "41 24.2028, 2 10.4418";
+    }
+
+    public void obtenerLlaveSimetrica() throws IOException {
+        //Leer mensaje encriptado
+        reader.readLine();
+        String s = reader.readLine();
+        System.out.println(SIN + s);
+
+        //Descifrar llave del mensaje
+        s = s.split(":")[1];
+        System.out.println(s);
+        byte[] llaveBytes = RSACipher.descifrar(DatatypeConverter.parseHexBinary(s), keyPair.getPrivate());
+        secretKey = new SecretKeySpec(llaveBytes, 0, llaveBytes.length, ALGORITMOS[0]);
+    }
+
+    public void intercambiarCertificados() throws IOException {
         //Generar certificado
-        java.security.cert.X509Certificate cert = null;
         try {
             cert = generarCertificado("SHA256WithRSA");
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { }
         if(cert == null) System.exit(-1);
 
         //Enviar certificado
@@ -124,10 +144,10 @@ public class Cliente {
             socket.getOutputStream().write(cert.getEncoded());
             socket.getOutputStream().flush();
             System.out.println(SOUT + "Client certificate bytes");
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { }
 
         //Leer resultado certificado
-        s = reader.readLine();
+        String s = reader.readLine();
         if(s != null) {
             System.out.println(SIN + s);
         }
@@ -138,18 +158,23 @@ public class Cliente {
 
         //Leer bytes del certificado
         byte[] temp = new byte[1024];
-        int k = socket.getInputStream().read(temp);
+        int k = 0;
+        k = socket.getInputStream().read(temp);
+        System.out.println(k);
         byte[] bytes = Arrays.copyOf(temp, k);
         System.out.println(SIN + "Server certificate bytes");
 
         //Extraer PublicKey del certificado
         InputStream is = new ByteArrayInputStream(bytes);
-        X509Certificate serverCert = null;
         try {
             serverCert = (X509Certificate) (CertificateFactory.getInstance("X.509")).generateCertificate(is);
-        } catch (Exception e) { e.printStackTrace();
-            writer.println(ERR); System.out.println(SOUT + ERR); System.exit(-1);}
-        PublicKey publicKey = serverCert.getPublicKey();
+        } catch (Exception e) {
+            writer.println(ERR);
+            System.out.println(SOUT + ERR);
+            System.out.println(e.getMessage());
+            System.exit(-1);
+        }
+        publicKey = serverCert.getPublicKey();
 
         //Validar fecha certificado
         Date a = serverCert.getNotAfter();
@@ -164,41 +189,55 @@ public class Cliente {
             System.out.println(CRTERR);
             System.exit(-1);
         }
+    }
 
-        //Leer mensaje encriptado
-        reader.readLine();
-        s = reader.readLine();
-        System.out.println(SIN + s);
+    public void definirPuerto() throws IOException {
+        System.out.println("En que puerto esta el servidor?");
+        int port = 9160;
+        try {
+            port = Integer.parseInt(stdIn.readLine());
+            if(port == 1) port = 9160;
+        } catch (Exception e) { }
 
-        //Descifrar llave del mensaje
-        s = s.split(":")[1];
-        System.out.println(s);
-        byte[] llaveBytes = RSACipher.descifrar(DatatypeConverter.parseHexBinary(s), keyPair.getPrivate());
-        SecretKey secretKey = new SecretKeySpec(llaveBytes, 0, llaveBytes.length, ALGORITMOS[0]);
+        try {
+            socket = new Socket(InetAddress.getLocalHost(), port);
+        } catch (Exception e) { throw e; }
+        System.out.println("Conectado al puerto " + port);
 
-        //Pedir coordenadas
-        s = stdIn.readLine();
-        if(s.equals("1")) s = "41 24.2028, 2 10.4418";
+        writer = new PrintWriter(socket.getOutputStream(), true);
+        reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+    }
 
-        //Cifrar coordenadas
-        byte[] act1Bytes = AESCipher.cifrar(s, secretKey, ALGORITMOS[0].equals("AES")? ALGORITMOS[0] + PADDING : ALGORITMOS[0]);
-        String act1 = toHexString(act1Bytes).toUpperCase();
+    public void definirProtocolo() throws IOException {
+        //Enviar algoritmos a usar
 
-        //Enviar act1 cifrado
-        System.out.println(SOUT + ACT1 + act1);
-        writer.println(ACT1+act1);
+        ALGORITMOS = preguntaAlgoritmos();
+        String msg = ALG + ":" + ALGORITMOS[0] + ":RSA:" + ALGORITMOS[1];
+        writer.println(msg);
+        System.out.println(SOUT + msg);
 
-        //Obtener MAC
-        byte[] act2Bytes = getMAC(act1Bytes, secretKey, ALGORITMOS[1]);
-        String act2 = toHexString(act2Bytes).toUpperCase();
-        System.out.println(SOUT + ACT2 + act2);
-        writer.println(ACT2 + act2);
-
-        //Leer respuesta servidor
-        s = reader.readLine();
-        if(s != null) {
-            System.out.println(SIN + s);
+        //Recibir compatibilidad de algoritmos
+        String s = reader.readLine();
+        if(s != null) System.out.println(SIN + s);
+        else {
+            System.out.println(CTO);
+            System.exit(-1);
         }
+    }
+
+    public void iniciarProtocolo() throws IOException {
+        //Iniciar protocolo con el servidor
+        System.out.println("Desea iniciar la conexion? (Y/N)");
+        String s = stdIn.readLine();
+        if(s.equals("1") || s.toLowerCase().equals("y")) {
+            writer.println(INIC);
+            System.out.println(SOUT + INIC);
+        }
+        else System.exit(0);
+
+        //Recibir respuesta servidor
+        s = reader.readLine();
+        if(s != null) System.out.println(SIN + s);
         else {
             System.out.println(CTO);
             System.exit(-1);
@@ -264,7 +303,7 @@ public class Cliente {
     public static void main(String[] args) {
         Cliente cliente = new Cliente();
         try {
-            cliente.iniciar();
+            cliente.enviarCoordenadas();
         } catch (Exception e) { e.printStackTrace(); }
     }
 }
